@@ -1,0 +1,70 @@
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urlparse
+import xml.etree.ElementTree as ET
+
+# Set the base URL
+base_url = 'https://3mmaven.com'
+visited_urls = set()
+
+def crawl(url):
+    if url in visited_urls:
+        return []
+    
+    try:
+        response = requests.get(url)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+    except requests.RequestException as e:
+        print(f"Error crawling {url}: {e}")
+        return []
+
+    visited_urls.add(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    links = []
+
+    # Extract all links from the page
+    for a_tag in soup.find_all('a', href=True):
+        href = a_tag['href']
+        # Create an absolute URL
+        full_url = urljoin(base_url, href)
+        # Remove fragments (e.g., #section)
+        parsed_url = urlparse(full_url)._replace(fragment='').geturl()
+
+        if parsed_url.startswith(base_url) and parsed_url not in visited_urls:
+            links.append(parsed_url)
+            # Print out for debugging
+            print(f"Found link: {parsed_url}")
+
+    return links
+
+def generate_sitemap(url):
+    to_visit = [url]
+    sitemap_urls = []
+
+    while to_visit:
+        current_url = to_visit.pop()
+        print(f"Crawling: {current_url}")
+        sitemap_urls.append(current_url)
+        new_links = crawl(current_url)
+        to_visit.extend([link for link in new_links if link not in visited_urls])
+
+    return sitemap_urls
+
+def save_sitemap_xml(urls, filename):
+    urlset = ET.Element('urlset', xmlns="http://www.sitemaps.org/schemas/sitemap/0.9")
+    
+    for url in urls:
+        url_element = ET.SubElement(urlset, 'url')
+        loc = ET.SubElement(url_element, 'loc')
+        loc.text = url
+
+    tree = ET.ElementTree(urlset)
+    tree.write(filename, encoding='utf-8', xml_declaration=True)
+
+if __name__ == '__main__':
+    sitemap_urls = generate_sitemap(base_url)
+    if sitemap_urls:
+        save_sitemap_xml(sitemap_urls, 'sitemap.xml')
+        print(f'Sitemap saved with {len(sitemap_urls)} URLs.')
+    else:
+        print("No URLs found to add to the sitemap.")
